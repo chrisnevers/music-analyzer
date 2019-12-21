@@ -131,11 +131,18 @@ module Interval = struct
     | Fourteenth  -> Seventh
     | Fifteenth   -> Octave
 
+  (*
+    Treat the notes as a ring.
+    [A E] returns Perfect Fifth, but [E A] return Perfect Fourth
+  *)
+  let get_distance e1 e2 =
+    if e2 > e1 then e2 - e1 else (e2 + 12) - e1
+
   let find_interval p1 p2 =
     let open Pitch in
     let e1 = normalize p1 in
     let e2 = normalize p2 in
-    match e1 - e2 |> abs with
+    match get_distance e1 e2 with
     | 0   -> Perfect, Unison
     | 1   -> Minor, Second
     | 2   -> Major, Second
@@ -149,7 +156,21 @@ module Interval = struct
     | 10  -> Minor, Seventh
     | 11  -> Major, Seventh
     | 12  -> Perfect, Octave
-    | _   -> failwith "Fatal Error: Interval.find_interval"
+    | i   -> "Fatal Error: Interval.find_interval: " ^ string_of_int i |> failwith
+
+  let%test "find_interval A -> E" =
+    let open Note in
+    let open Accidental in
+    let a = A, Natural in
+    let e = E, Natural in
+    find_interval a e = (Perfect, Fifth)
+
+  let%test "find_interval E -> A" =
+    let open Note in
+    let open Accidental in
+    let a = A, Natural in
+    let e = E, Natural in
+    find_interval e a = (Perfect, Fourth)
 
   let transpose_simple number = function
     | `Up n   -> simple_number_to_enum number + n |> simple_number_of_enum |> some
@@ -173,21 +194,66 @@ module Interval = struct
       let (quality', number') = flip_quality transpose_complex (quality, number) in
       Complex (quality', number')
 
+  let show_interval = function
+    | (q,n) -> Format.sprintf "%-17s" @@ "(" ^ show_quality q ^ ", " ^ show_simple_number n ^ ")"
+
+  let show_interval_list il = "[" ^ String.concat ", " (List.map show_interval il) ^ "]"
+
 end
 
 module Chord = struct
+  type quality =
+  | Major
+  | Minor
+  | Diminished
+  | Augmented
+
   type t = Pitch.t list
 
-  let rec get_chord_intervals pitches =
-    let open Interval in
-    match pitches with
-    | []      -> []
-    (* No harmonic information *)
-    | _ :: [] -> []
-    | p1 :: p2 :: tl -> find_interval p1 p2 :: get_chord_intervals (p2 :: tl)
+  module PitchSet = CCSet.Make(struct type t = Pitch.t let compare = compare end)
 
-  (* let identify pitches = *)
-    (* let intervals = get_chord_intervals pitches in *)
+  (*
+    For every note in chord, get it's relationship with every other note.
+
+    E.G. AΔ
+
+    (A, Natural) : [(Major, Third)   , (Perfect, Fifth) , (Major, Seventh) ]
+    (C, Sharp)   : [(Minor, Sixth)   , (Minor, Third)   , (Perfect, Fifth) ]
+    (E, Natural) : [(Perfect, Fourth), (Major, Sixth)   , (Major, Third)   ]
+    (G, Sharp)   : [(Minor, Second)  , (Perfect, Fourth), (Minor, Sixth)   ]
+   *)
+  let get_chord_intervals pitches =
+    let open Interval in
+    let set = PitchSet.of_list pitches in
+    PitchSet.fold (fun p acc ->
+      let rest = PitchSet.remove p set |> PitchSet.to_list in
+      let relations = List.map (find_interval p) rest in
+      (p, relations) :: acc
+    ) set []
+
+  let show_chord_intervals = function
+    | (p, il) -> Format.printf "%-12s : %s\n"
+                (Pitch.show p) (Interval.show_interval_list il)
+
+  let%test "get_chord_intervals" =
+    let open Note in
+    let open Accidental in
+    let open Interval in
+    let root = A, Natural in
+    let third = C, Sharp in
+    let fifth = E, Natural in
+    let seventh = G, Sharp in
+    let result = get_chord_intervals [root; third; fifth; seventh] in
+    List.iter show_chord_intervals result;
+    true
+
+(*
+  let identify pitches =
+    let intervals = get_chord_intervals pitches in
+    generate_constraints interval *)
+      (* Add point towards p1 major chord *)
+
+
     (* List.iter (fun (q, n) -> Interval.show (Simple (q, n)) |> print_endline) intervals *)
     (* enums = [0; 5; 8] | [5; 8; 0] | etc. (A major triad) *)
 

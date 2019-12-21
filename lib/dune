@@ -1,4 +1,5 @@
 (library
   (name music_analyzer)
   (libraries containers)
-  (preprocess (pps ppx_deriving.enum ppx_deriving.show)))
+  (inline_tests)
+  (preprocess (pps ppx_deriving.enum ppx_deriving.show ppx_inline_test)))
