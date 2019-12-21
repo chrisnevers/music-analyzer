@@ -149,7 +149,7 @@ module Interval = struct
     | 3   -> Minor, Third
     | 4   -> Major, Third
     | 5   -> Perfect, Fourth
-    | 6   -> Diminished, Fourth
+    | 6   -> Diminished, Fifth
     | 7   -> Perfect, Fifth
     | 8   -> Minor, Sixth
     | 9   -> Major, Sixth
@@ -207,8 +207,14 @@ module Chord = struct
   | Minor
   | Diminished
   | Augmented
+  | Suspended of Interval.simple_number
+  [@@deriving show { with_path = false }]
+
+  type name = Pitch.t * quality
+  [@@deriving show { with_path = false }]
 
   type t = Pitch.t list
+  [@@deriving show { with_path = false }]
 
   module PitchSet = CCSet.Make(struct type t = Pitch.t let compare = compare end)
 
@@ -235,27 +241,49 @@ module Chord = struct
     | (p, il) -> Format.printf "%-12s : %s\n"
                 (Pitch.show p) (Interval.show_interval_list il)
 
+  let rec contains interval = function
+    | [] -> false
+    | h :: _ when h = interval -> true
+    | _ :: t -> contains interval t
+
+  let get_chord pitches =
+    match pitches with
+    (* It's a major chord *)
+    | (note, intervals) when contains (Interval.Major, Interval.Third) intervals ->
+      (* Is it augmented? If not, assume perfect fifth *)
+      if contains (Interval.Augmented, Interval.Fifth) intervals then Some (note, Augmented) else
+      if contains (Interval.Perfect, Interval.Fifth) intervals then Some (note, Major) else
+      None
+    (* It's a minor chord *)
+    | (note, intervals) when contains (Interval.Minor, Interval.Third) intervals ->
+      (* Is it diminished? If not, assume perfect fifth *)
+      if contains (Interval.Diminished, Interval.Fifth) intervals then Some (note, Diminished) else
+      if contains (Interval.Perfect, Interval.Fifth) intervals then Some (note, Minor) else
+      None
+    | _ -> None
+
+  let get_chords intervals = List.map get_chord intervals
+
+  let identify pitches =
+    let intervals = get_chord_intervals pitches in
+    let chords = get_chords intervals in
+    chords
+
   let%test "get_chord_intervals" =
     let open Note in
     let open Accidental in
-    let open Interval in
     let root = A, Natural in
     let third = C, Sharp in
     let fifth = E, Natural in
     let seventh = G, Sharp in
     let result = get_chord_intervals [root; third; fifth; seventh] in
     List.iter show_chord_intervals result;
+    let chords = identify [root; third; fifth; seventh] in
+    List.iter (function
+      | Some chord -> print_endline @@ show_name chord
+      | None -> ()
+    ) chords;
     true
-
-(*
-  let identify pitches =
-    let intervals = get_chord_intervals pitches in
-    generate_constraints interval *)
-      (* Add point towards p1 major chord *)
-
-
-    (* List.iter (fun (q, n) -> Interval.show (Simple (q, n)) |> print_endline) intervals *)
-    (* enums = [0; 5; 8] | [5; 8; 0] | etc. (A major triad) *)
 
 end
 
